@@ -8,15 +8,19 @@
 name: Build wheels and deploy
 
 on:
-  create:
-    tags:
-      - v*
-
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [published]
+  workflow_dispatch:
+  
 jobs:
 
   setup_release:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Get the tag version
         id: extract_branch
@@ -42,8 +46,8 @@ jobs:
       matrix:
           # Using ubuntu-20.04 instead of 22.04 for more compatibility (glibc). Ideally we'd use the
           # manylinux docker image, but I haven't figured out how to install CUDA on manylinux.
-          os: [ubuntu-20.04]
-          python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+          os: [windows-latest]
+          python-version: ['3.8', '3.9', '3.10']
           torch-version: ['2.0.1', '2.1.2', '2.2.2', '2.3.1', '2.4.0']
           cuda-version: ['11.8.0', '12.3.2']
           # We need separate wheels that either uses C++11 ABI (-D_GLIBCXX_USE_CXX11_ABI) or not.
@@ -134,7 +138,20 @@ jobs:
           python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
         shell:
           bash
-
+ - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install setuptools wheel numpy scikit-build-core>=0.4.3 cibuildwheel==2.19.2
+    - name: Install C++ build tools
+      run: |
+        choco install visualstudio2019-workload-vctools -y
+    - name: Build wheels
+      run: python -m cibuildwheel --output-dir wheelhouse
+        
+    - uses: actions/upload-artifact@v4
+      with: 
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
       - name: Build wheel
         run: |
           # We want setuptools >= 49.6.0 otherwise we can't compile the extension if system CUDA version is 11.7 and pytorch cuda version is 11.6
